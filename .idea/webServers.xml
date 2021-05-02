@@ -2,7 +2,7 @@
 <project version="4">
   <component name="WebServers">
     <option name="servers">
-      <webServer id="647d8230-0a8a-4139-aee2-93ec7451b8a0" name="archer">
+      <webServer id="647d8230-0a8a-4139-aee2-93ec7451b8a0" name="archer (project level)">
         <fileTransfer accessType="SFTP" host="192.168.1.86" port="22" sshConfigId="df3a7866-16ca-4773-958e-d5302a3eb876" sshConfig="danno@192.168.1.86:22 password">
           <advancedOptions>
             <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
