@@ -15,5 +15,6 @@ This code targets the following hardware...
 
 Raspberry Pi (any)
 
-Adafruit RFM69HCW Transceiver Radio Bonnet - 868 / 915 MHz<br>
-https://learn.adafruit.com/adafruit-radio-bonnets
+Adafruit RFM69HCW Transceiver Radio Bonnet - 868 / 915 MHz <br>
+https://learn.adafruit.com/adafruit-radio-bonnets <br>
+https://cdn-shop.adafruit.com/product-files/3076/RFM69HCW-V1.1.pdf

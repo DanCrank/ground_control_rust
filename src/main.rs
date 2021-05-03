@@ -20,7 +20,7 @@ use display_interface::DisplayError;
 use rfm69:: {
     Rfm69,
     registers:: { DataMode, InterPacketRxDelay, Modulation, ModulationShaping, ModulationType,
-                  PacketConfig, PacketDc, PacketFiltering, PacketFormat }
+                  PacketConfig, PacketDc, PacketFiltering, PacketFormat, Registers }
 };
 use rppal:: {
     gpio::{Gpio, OutputPin},
@@ -36,7 +36,9 @@ use ssd1306:: {
 };
 use std:: {
     fmt::Write,
-    io:: { Error, ErrorKind }
+    io:: { Error, ErrorKind },
+    thread,
+    time
 };
 
 // this macro consumes a valueless Result that may contain an Error
@@ -95,11 +97,20 @@ fn setup_radio() -> Result<Rfm69<OutputPin, Spi, linux_embedded_hal::Delay>, Box
     // initialize the RFM69 radio
     // see https://github.com/almusil/rfm69/blob/master/examples/receive.rs
     let gpio = Gpio::new()?;
-    // Configure CS pin
-    let mut cs = gpio.get(26)?.into_output();
+    // configure CS pin
+    let mut cs = gpio.get(7)?.into_output();
     cs.set_high();
+    // configure reset pin
+    let mut reset = gpio.get(25)?.into_output();
+    reset.set_low();
+    // just guessing here, but wait a sec, then reset the RFM69 the same way the CircuitPython code does
+    thread::sleep(time::Duration::from_secs(1));
+    reset.set_high();
+    thread::sleep(time::Duration::from_millis(10));
+    reset.set_low();
+    thread::sleep(time::Duration::from_secs(1));
     // Configure SPI 8 bits, Mode 0
-    let spi = Spi::new(Bus::Spi0, SlaveSelect::Ss0, 1_000_000, rppal::spi::Mode::Mode0)?;
+    let spi = Spi::new(Bus::Spi0, SlaveSelect::Ss0, 2_000_000, rppal::spi::Mode::Mode0)?;
     // Create rfm struct with defaults that are set after reset
     let mut rfm = Rfm69::new(spi, cs, linux_embedded_hal::Delay);
     dont_panic!(rfm.modulation(Modulation { data_mode: DataMode::Packet,
@@ -115,6 +126,29 @@ fn setup_radio() -> Result<Rfm69<OutputPin, Spi, linux_embedded_hal::Delay>, Box
                                             auto_rx_restart: true }));
     // TODO node_address
     // TODO aes
+    // check for good connection by reading back version register
+    // see https://github.com/adafruit/Adafruit_CircuitPython_RFM69/blob/ad33b2948a13df1c0e036605ef1fb5e6484ea97e/adafruit_rfm69.py#L263
+    match rfm.read(Registers::Version) {
+        Ok(i) => {
+            println!("RFM69 version: 0x{:02x}", i);
+            if i != 0x24 {
+                panic!("Expected version 0x24, exiting.");
+            }
+        },
+        Err(e) => panic!("Error connecting to RFM69: {:#?}", e)
+    }
+
+    // debug
+    // print content of all RFM registers
+    // match rfm.read_all_regs() {
+    //     Ok(regs) => {
+    //         for (index, val) in regs.iter().enumerate() {
+    //             println!("Register 0x{:02x} = 0x{:02x}", index + 1, val);
+    //         }
+    //     },
+    //     Err(e) => println!("Could not read RFM69 registers! {:#?}", e),
+    // }
+
     Result::Ok(rfm)
 }
 
@@ -125,14 +159,14 @@ fn main() {
     let mut rfm = setup_radio().unwrap();
 
     // print content of all RFM registers
-    match rfm.read_all_regs() {
-        Ok(regs) => {
-            for (index, val) in regs.iter().enumerate() {
-                println!("Register 0x{:02x} = 0x{:02x}", index + 1, val);
-            }
-        },
-        Err(e) => println!("Could not read RFM69 registers! {:#?}", e),
-    }
+    // match rfm.read_all_regs() {
+    //     Ok(regs) => {
+    //         for (index, val) in regs.iter().enumerate() {
+    //             println!("Register 0x{:02x} = 0x{:02x}", index + 1, val);
+    //         }
+    //     },
+    //     Err(e) => println!("Could not read RFM69 registers! {:#?}", e),
+    // }
 
     // prepare buffer to store the received data
     let mut buffer = [0; 64];
