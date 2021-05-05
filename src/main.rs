@@ -247,7 +247,6 @@ fn main() {
                     rfm69::Error::Timeout => (),
                     _ => println!("Receive error {:#?}", e)
                 }
-                thread::sleep(time::Duration::from_secs(1));
             },
         }
     }
