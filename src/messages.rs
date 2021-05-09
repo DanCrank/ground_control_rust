@@ -57,16 +57,21 @@ impl RoverMessage {
     // a CommandMessage expects an ACK, but a TelemetryAck does not.
     pub fn send(&self,
             rfm: &mut Rfm69<OutputPin, Spi, linux_embedded_hal::Delay>) -> Result<()> {
-        let mut max_message_length = 255;
-        if USE_ENCRYPTION { max_message_length = 64; }
+        let mut max_message_length = 251;
+        if USE_ENCRYPTION { max_message_length = 60; }
         // serialize the message
-        let mut buf = Vec::new();
+        // first four bytes are used by RadioHead as TO, FROM, ID, FLAGS
+        // so push those onto the Vec before serializing the rest of the payload
+        // TODO: if we ever need to put real values for these, do it here
+        let mut buf = vec![0xff, 0xff, 0x00, 0x00];
         RoverMessage::serialize(&self, &mut Serializer::new(&mut buf)).unwrap();
         // check message length
         if buf.len() > max_message_length {
             return Err(format!("Cannot send: message too long! {:?}", self).into())
         }
         // send it
+        // DEBUG
+        println!("DEBUG: sending this message:\n{:?}", buf);
         match rfm.send(buf.as_slice()) {
             Err(e) => return Err(format!("Error while sending message: {:?}", e).into()),
             _ => {}
@@ -109,8 +114,6 @@ impl RoverMessage {
                             // eat timeouts but cough up anything else
                         },
                         _ => {
-                            thread::sleep(Duration::from_millis(MSG_DELAY));
-                            // TODO: is there a way to bubble the error here directly?
                             return Err(format!("Error while waiting for RoverMessage: {:?}", e).into())
                         }
                     }
@@ -120,8 +123,13 @@ impl RoverMessage {
             thread::sleep(Duration::from_millis(LISTEN_DELAY));
         }
         if !complete { return Err("Timed out while waiting for RoverMessage.".into()) }
+        // DEBUG
+        println!("DEBUG: received this message:\n{:?}", buf);
         // deserialize the message
-        match RoverMessage::deserialize(&mut Deserializer::new(&mut buf.as_ref())) {
+        // first four bytes are used by RadioHead as TO, FROM, ID, FLAGS
+        // so strip those off before deserializing the rest of the payload
+        // TODO: if those values are ever needed, grab them here
+        match RoverMessage::deserialize(&mut Deserializer::new(&mut buf[4..].as_ref())) {
             Err(e) => return Err(format!("Error while deserializing response: {:?}", e).into()),
             _ => {}
         }
@@ -132,6 +140,7 @@ impl RoverMessage {
                                                                      command_waiting: false,
                                                                      msg: "".to_string()
                 };
+                thread::sleep(Duration::from_millis(MSG_DELAY));
                 ack.send(rfm)?
             },
             _ => (), // no ack needed

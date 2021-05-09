@@ -21,6 +21,8 @@ error_chain! {
         RppalGpio(::rppal::gpio::Error);
         RppalI2c(::rppal::i2c::Error);
         RppalSpi(::rppal::spi::Error);
+        //Ssd1306 does not impl Display on its error types, so we can't include it here
+        //bad, bad Ssd1306
         //Ssd1306(::ssd1306::mode::terminal::TerminalModeError);
     }
 }
