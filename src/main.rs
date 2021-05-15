@@ -14,10 +14,6 @@
 
 #[macro_use]
 extern crate error_chain;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate rmp_serde as rmps;
 
 use errors::*;
 use rfm69:: {
@@ -42,6 +38,7 @@ use std:: {
     time
 };
 use crate::messages::*;
+use rfm69::registers::FifoMode;
 
 mod errors;
 mod messages;
@@ -83,6 +80,7 @@ fn setup_radio() -> Result<Rfm69<OutputPin, Spi, linux_embedded_hal::Delay>> {
     reset.set_high();
     thread::sleep(time::Duration::from_millis(100));
     reset.set_low();
+    thread::sleep(time::Duration::from_millis(1000));
     // configure SPI 8 bits, Mode 0
     let spi = Spi::new(Bus::Spi0, SlaveSelect::Ss0, 2_000_000, rppal::spi::Mode::Mode0)?;
     let mut rfm = Rfm69::new(spi, cs, linux_embedded_hal::Delay);
@@ -91,12 +89,12 @@ fn setup_radio() -> Result<Rfm69<OutputPin, Spi, linux_embedded_hal::Delay>> {
                                 shaping: ModulationShaping::Shaping00 })  // no shaping
                                 .expect("Radio error setting modulation");
     rfm.bit_rate(9600.0).expect("Radio error setting bit rate");
-    rfm.frequency(868_000_000.0).expect("Radio error setting frequency");
+    rfm.frequency(915_000_000.0).expect("Radio error setting frequency");
     // don't know if it matters, but the value computed by fdev() is off by 1 from what the sender has.
     // therefore, set the exact value.
-    // instead of: dont_panic!(rfm.fdev(19200.0));
+    // instead of: rfm.fdev(19200.0).expect("Radio error setting fdev");
     rfm.write(Registers::FdevMsb, 0x01).expect("Radio error setting FdevMsb");
-    rfm.write(Registers::FdevLsb, 0x3b).expect("Radio error setting FdevLsb");
+    rfm.write(Registers::FdevLsb, 0x38).expect("Radio error setting FdevLsb");
     // preamble - default 4 octets per RadioHead
     rfm.preamble(4).expect("Radio error setting preamble");
     // sync - default 2 bytes (0x2d, 0xd4) per RadioHead
@@ -105,19 +103,21 @@ fn setup_radio() -> Result<Rfm69<OutputPin, Spi, linux_embedded_hal::Delay>> {
     rfm.packet(PacketConfig { format: PacketFormat::Variable(64),
                                           dc: PacketDc::Whitening,
                                           crc: true,
-                                          filtering: PacketFiltering::None, // TODO use Address
+                                          filtering: PacketFiltering::None,
                                           interpacket_rx_delay: InterPacketRxDelay::Delay1Bit, // ???
                                           auto_rx_restart: true })
                                           .expect("Radio error setting packet format");
+    rfm.fifo_mode(FifoMode::NotEmpty).expect("Radio error setting FIFO mode");
     rfm.rx_bw(RxBw { dcc_cutoff: DccCutoff::Percent0dot125, rx_bw: RxBwFsk::Khz25dot0 }).expect("Radio error setting Rx BW");
     rfm.rx_afc_bw(RxBw { dcc_cutoff: DccCutoff::Percent0dot125, rx_bw: RxBwFsk::Khz25dot0 }).expect("Radio error setting AFC BW");
     // rfm69 library never appears to set power level
-    rfm.write(Registers::PaLevel, 0x7c).expect("Radio error setting power level");
+    rfm.write(Registers::PaLevel, 0b011_11111).expect("Radio error setting power level"); // power level 17
     // TODO set up aes encryption
-    // the rfm69 lib defines Mode::Receiver as 0x10, which appears to be incorrect.
-    // therefore, directly set the correct receiver mode (0x08).
-    // instead of: dont_panic!(rfm.mode(Mode::Receiver));
-    rfm.write(Registers::OpMode, 0x08).expect("Radio error setting op mode to Rx");
+    // debug - register dump
+    // Print content of all RFM registers
+    // for (index, val) in rfm.read_all_regs().ok().unwrap().iter().enumerate() {
+    //     println!("Register 0x{:02x} = 0x{:02x}", index + 1, val);
+    // }
     // check for good connection by reading back version register
     // see https://github.com/adafruit/Adafruit_CircuitPython_RFM69/blob/ad33b2948a13df1c0e036605ef1fb5e6484ea97e/adafruit_rfm69.py#L263
     match rfm.read(Registers::Version) {
@@ -135,17 +135,9 @@ fn setup_radio() -> Result<Rfm69<OutputPin, Spi, linux_embedded_hal::Delay>> {
 
 // get the carrier frequency currently set in the RFM69
 fn get_frequency(rfm: &mut Rfm69<OutputPin, Spi, linux_embedded_hal::Delay>) -> u32 {
-    let mut freq: u32 = 0;
-    for reg in &[Registers::FrfMsb, Registers::FrfMid, Registers::FrfLsb] {
-        freq = freq << 8 + match rfm.read(*reg) {
-            Ok(b) => b,
-            Err(e) => {
-                println!("Error reading frequency register: {:#?}", e);
-                0
-            }
-        };
-    }
-    freq
+    (u32::from(rfm.read(Registers::FrfMsb).unwrap()) << 16 |
+     u32::from(rfm.read(Registers::FrfMid).unwrap()) << 8 |
+     u32::from(rfm.read(Registers::FrfLsb).unwrap())) * 61
 }
 
 fn process_telemetry(telemetry: &RoverMessage) {
@@ -162,10 +154,11 @@ fn run() -> Result<()> {
     let mut rfm = setup_radio().unwrap();
     // loop and receive telemetry packets
     loop {
-        let telemetry: RoverMessage = RoverMessage::TelemetryMessage { timestamp: Default::default(),
-                                                                       location: Default::default(),
-                                                                       status: "".to_string()
-        };
+        let mut telemetry: RoverMessage = RoverMessage::TelemetryMessage { timestamp: Default::default(),
+                                                                           location: Default::default(),
+                                                                           signal_strength: 0,
+                                                                           free_memory: 0,
+                                                                           status: String::new() };
         match telemetry.receive(&mut rfm, 10000) {
             Ok(()) => process_telemetry(&telemetry),
             Err(e) => println!("{:#?}", e)
