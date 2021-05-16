@@ -92,25 +92,6 @@ pub struct RoverLocData { // should serialize to 24 bytes (4x float-32@5, +fixin
 }
 
 impl RoverLocData {
-    fn serialize(&self, buf: &mut Vec<u8>) {
-        for byte in self.gps_lat.to_le_bytes().iter() {
-            buf.push(*byte);
-        }
-        for byte in self.gps_long.to_le_bytes().iter() {
-            buf.push(*byte);
-        }
-        for byte in self.gps_alt.to_le_bytes().iter() {
-            buf.push(*byte);
-        }
-        for byte in self.gps_speed.to_le_bytes().iter() {
-            buf.push(*byte);
-        }
-        buf.push(self.gps_sats);
-        for byte in self.mag_hdg.to_le_bytes().iter() {
-            buf.push(*byte);
-        }
-    }
-
     fn deserialize(&mut self, buf: &mut &[u8]) {
         self.gps_lat = f32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
         self.gps_long = f32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
@@ -201,40 +182,21 @@ impl RoverMessage {
         buf.push(0x00); // ID
         buf.push(0x00); // FLAGS
         match self {
-            RoverMessage::TelemetryMessage { timestamp,
-                                             location,
-                                             signal_strength,
-                                             free_memory,
-                                             status } => {
-                buf.push(self.get_message_id());
-                timestamp.serialize(buf);
-                location.serialize(buf);
-                RoverMessage::serialize_i16(signal_strength, buf);
-                RoverMessage::serialize_u16(free_memory, buf);
-                RoverMessage::serialize_string(status, buf);
-            }
+            RoverMessage::TelemetryMessage { .. } => { return Err("Station cannot serialize TelemetryMessage".into()) } // never sent by station
             RoverMessage::TelemetryAck { timestamp, ack, command_waiting } => {
                 buf.push(self.get_message_id());
                 timestamp.serialize(buf);
                 RoverMessage::serialize_bool(*ack, buf);
                 RoverMessage::serialize_bool(*command_waiting, buf);
             }
-            RoverMessage::CommandReady { timestamp, ready } => {
-                buf.push(self.get_message_id());
-                timestamp.serialize(buf);
-                RoverMessage::serialize_bool(*ready, buf);
-            }
+            RoverMessage::CommandReady { .. } => { return Err("Station cannot serialize CommandReady".into()) } // never sent by station
             RoverMessage::CommandMessage { timestamp, sequence_complete, command } => {
                 buf.push(self.get_message_id());
                 timestamp.serialize(buf);
                 RoverMessage::serialize_bool(*sequence_complete, buf);
                 RoverMessage::serialize_string(command, buf);
             }
-            RoverMessage::CommandAck { timestamp, ack } => {
-                buf.push(self.get_message_id());
-                timestamp.serialize(buf);
-                RoverMessage::serialize_bool(*ack, buf);
-            }
+            RoverMessage::CommandAck { .. } => { return Err("Station cannot serialize CommandAck".into()) } // never sent by station
         }
         // finally push the length byte onto the *front* of the buffer
         buf.insert(0, (buf.len() + 1) as u8);
@@ -261,14 +223,7 @@ impl RoverMessage {
                 *free_memory = RoverMessage::deserialize_u16(&mut &buf[30..32]);
                 RoverMessage::deserialize_string(status, &mut &buf[32..]);
             }
-            RoverMessage::TelemetryAck { ref mut timestamp, ref mut ack, ref mut command_waiting } => {
-                if buf[5] != MESSAGE_TELEMETRY_ACK {
-                    return Err(format!("Wrong message type: expected MESSAGE_TELEMETRY_ACK, got {}", RoverMessage::get_message_type(buf[5])).into());
-                }
-                timestamp.deserialize(&mut &buf[6..9]);
-                *ack = RoverMessage::deserialize_bool(buf[9]);
-                *command_waiting = RoverMessage::deserialize_bool(buf[10]);
-            }
+            RoverMessage::TelemetryAck { .. } => { return Err("Station cannot deserialize TelemetryAck".into()); }
             RoverMessage::CommandReady { ref mut timestamp, ref mut ready } => {
                 if buf[5] != MESSAGE_COMMAND_READY {
                     return Err(format!("Wrong message type: expected MESSAGE_COMMAND_READY, got {}", RoverMessage::get_message_type(buf[5])).into());
@@ -276,14 +231,7 @@ impl RoverMessage {
                 timestamp.deserialize(&mut &buf[6..9]);
                 *ready = RoverMessage::deserialize_bool(buf[9]);
             }
-            RoverMessage::CommandMessage { ref mut timestamp, ref mut sequence_complete, ref mut command } => {
-                if buf[5] != MESSAGE_COMMAND {
-                    return Err(format!("Wrong message type: expected MESSAGE_COMMAND, got {}", RoverMessage::get_message_type(buf[5])).into());
-                }
-                timestamp.deserialize(&mut &buf[6..9]);
-                *sequence_complete = RoverMessage::deserialize_bool(buf[9]);
-                RoverMessage::deserialize_string(command, &mut &buf[29..]);
-            }
+            RoverMessage::CommandMessage { .. } => { return Err("Station cannot deserialize CommandMessage".into()); }
             RoverMessage::CommandAck { ref mut timestamp, ref mut ack } => {
                 if buf[5] != MESSAGE_COMMAND_ACK {
                     return Err(format!("Wrong message type: expected MESSAGE_COMMAND_ACK, got {}", RoverMessage::get_message_type(buf[5])).into());
