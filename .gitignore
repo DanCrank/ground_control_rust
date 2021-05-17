@@ -1,2 +1,3 @@
 /target
 /deadcode
+/src/encryption_key.rs

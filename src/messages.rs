@@ -2,15 +2,14 @@
 
 use chrono::prelude::*;
 use crate::errors::*;
-use rfm69::Rfm69;
+use rfm69::{ Rfm69, registers::Registers };
 use rppal::{ gpio::OutputPin, spi::Spi };
 use std::{ thread };
 use std::time::{ Duration, Instant };
-use rfm69::registers::Registers;
 
-const ACK_TIMEOUT: u64 = 30000;   // millis to wait for an ack msg
-const MSG_DELAY: u64 = 250;      // millis to wait between Rx and Tx, to give the other side time to switch from Tx to Rx
-const LISTEN_DELAY: u64 = 100;   // millis to wait between checks of the receive buffer when receiving
+const ACK_TIMEOUT: u64 = 1000;   // millis to wait for an ack msg
+const MSG_DELAY: u64 = 100;      // millis to wait between Rx and Tx, to give the other side time to switch from Tx to Rx
+const LISTEN_DELAY: u64 = 50;   // millis to wait between checks of the receive buffer when receiving
 const USE_ENCRYPTION: bool = true;
 
 // message IDs for serialization
@@ -210,8 +209,8 @@ impl RoverMessage {
             }
             RoverMessage::CommandAck { .. } => { return Err("Station cannot serialize CommandAck".into()) } // never sent by station
         }
-        // finally push the length byte onto the *front* of the buffer
-        buf.insert(0, (buf.len() + 1) as u8);
+        // push the length byte onto the *front* of the buffer
+        buf.insert(0, buf.len() as u8);
         Ok(())
     }
 

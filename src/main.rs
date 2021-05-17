@@ -18,7 +18,7 @@ extern crate error_chain;
 use errors::*;
 use rfm69:: {
     Rfm69,
-    registers:: { DataMode, DccCutoff, InterPacketRxDelay, Modulation, ModulationShaping, ModulationType,
+    registers:: { DataMode, DccCutoff, FifoMode, InterPacketRxDelay, Modulation, ModulationShaping, ModulationType,
                   PacketConfig, PacketDc, PacketFiltering, PacketFormat, Registers, RxBw, RxBwFsk }
 };
 use rppal:: {
@@ -38,10 +38,11 @@ use std:: {
     time
 };
 use crate::messages::*;
-use rfm69::registers::FifoMode;
+use crate::encryption_key::{ ENCRYPTION_KEY, SYNC_WORDS };
 
 mod errors;
 mod messages;
+mod encryption_key;
 
 // set up the OLED display on the RFM69 bonnet
 fn setup_display() -> Result<TerminalMode<I2CInterface<I2c>, DisplaySize128x32>> {
@@ -99,7 +100,7 @@ fn setup_radio() -> Result<Rfm69<OutputPin, Spi, linux_embedded_hal::Delay>> {
     rfm.preamble(4).expect("Radio error setting preamble");
     // sync - default 2 bytes (0x2d, 0xd4) per RadioHead
     // TODO: choose other values to replace these defaults
-    rfm.sync(&[0x2d, 0xd4]).expect("Radio error setting sync bytes");
+    rfm.sync(&SYNC_WORDS).expect("Radio error setting sync words"); // defined in encryption_key.rs
     rfm.packet(PacketConfig { format: PacketFormat::Variable(64),
                                           dc: PacketDc::Whitening,
                                           crc: true,
@@ -110,6 +111,7 @@ fn setup_radio() -> Result<Rfm69<OutputPin, Spi, linux_embedded_hal::Delay>> {
     rfm.fifo_mode(FifoMode::NotEmpty).expect("Radio error setting FIFO mode");
     rfm.rx_bw(RxBw { dcc_cutoff: DccCutoff::Percent0dot125, rx_bw: RxBwFsk::Khz25dot0 }).expect("Radio error setting Rx BW");
     rfm.rx_afc_bw(RxBw { dcc_cutoff: DccCutoff::Percent0dot125, rx_bw: RxBwFsk::Khz25dot0 }).expect("Radio error setting AFC BW");
+    rfm.aes(&ENCRYPTION_KEY).expect("Radio error setting AES key"); // defined in encryption_key.rs
     // rfm69 library never appears to set power level
     rfm.write(Registers::PaLevel, 0b011_11111).expect("Radio error setting power level"); // power level 17
     // TODO set up aes encryption
